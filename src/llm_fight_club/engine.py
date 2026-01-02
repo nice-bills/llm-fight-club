@@ -32,6 +32,8 @@ def load_models():
         
         all_models = []
         for provider in pool:
+            # Skip huggingface entirely for now
+            if provider == "huggingface": continue
             all_models.extend(pool[provider])
         
         # Unique models only
