@@ -215,7 +215,7 @@ def run_fight_loop():
                 else: console.print(f"\n[bold yellow]🥊 ROUND {round_num} RESULT: DRAW[/bold yellow]")
 
                 fight_data["rounds"].append({"round": round_num, "red_text": t_a, "blue_text": t_b, "verdicts": round_verdicts})
-                if round_num < 5: countdown(120, "Rate Limit Protection")
+                if round_num < 5: countdown(120, "Intermission - Round Recovery")
 
             # Final result
             fight_data["aggregate_scores"] = {"red": total_red_score, "blue": total_blue_score}
