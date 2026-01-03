@@ -169,7 +169,12 @@ def run_fight_loop():
                 topic = clean_text(generate_random_topic(fighter_a))
 
             fight_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-            console.print(Panel.fit(f"[bold cyan]TOPIC:[/bold cyan] {topic}\n\n[red]🔴 {fighter_a}[/red] vs [blue]🔵 {fighter_b}[/blue]\n[yellow]👨‍⚖️ JUDGES:[/yellow]\n1. ??? (Blind)\n2. ??? (Blind)\n3. ??? (Blind)", title=f"🥊 FIGHT #{fight_id}", border_style="bold magenta"))
+            console.print(Panel.fit(
+                f"[bold cyan]TOPIC:[/bold cyan] {topic}\n\n"
+                f"[red]🔴 {fighter_a}[/red] vs [blue]🔵 {fighter_b}[/blue]\n"
+                f"[yellow]👨‍⚖️ JUDGES:[/yellow]\n1. {judges[0]}\n2. {judges[1]}\n3. {judges[2]}",
+                title=f"🥊 FIGHT #{fight_id}", border_style="bold magenta"
+            ))
 
             fight_data = {"fight_id": fight_id, "timestamp": str(datetime.now()), "topic": topic, "red_model": fighter_a, "blue_model": fighter_b, "judges": judges, "rounds": [], "aggregate_scores": {"red": 0, "blue": 0}, "winner": None, "decision_type": None}
             history, total_red_score, total_blue_score = [], 0, 0
@@ -207,7 +212,7 @@ def run_fight_loop():
                     
                     s_a_col = "green" if v['score_a'] > v['score_b'] else "white"
                     s_b_col = "green" if v['score_b'] > v['score_a'] else "white"
-                    console.print(f"[dim]Judge {idx+1}[/dim]: A:[{s_a_col}]{v['score_a']}[/{s_a_col}] B:[{s_b_col}]{v['score_b']}[/{s_b_col}] - {v['reason']}")
+                    console.print(f"[dim]{j.split('/')[-1]}[/dim]: A:[{s_a_col}]{v['score_a']}[/{s_a_col}] B:[{s_b_col}]{v['score_b']}[/{s_b_col}] - {v['reason']}")
                     round_verdicts.append(v)
 
                 if red_round_wins > blue_round_wins: console.print(f"\n[bold red]🥊 ROUND {round_num} WINNER: RED ({red_round_wins}-{blue_round_wins})[/bold red]")
