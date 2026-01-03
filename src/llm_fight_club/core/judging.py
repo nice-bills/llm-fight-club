@@ -2,6 +2,7 @@ import re
 import json
 import random
 import time
+import ast
 from litellm import completion
 from llm_fight_club.utils.text import clean_text
 
@@ -74,26 +75,83 @@ def get_single_judge_verdict(judge_model, topic, text_a, text_b, retries=2):
             
             try:
                 data = json.loads(content)
+                s_a = int(data.get("score_a", 5))
+                s_b = int(data.get("score_b", 5))
+                
+                # Handle nested reason objects (Mistral quirk)
+                reason_raw = data.get("reason", "No reason.")
+                if isinstance(reason_raw, dict):
+                    # Flatten dict values into string
+                    reason = " ".join([str(v) for v in reason_raw.values()])
+                elif isinstance(reason_raw, str) and reason_raw.strip().startswith("{"):
+                    # Handle stringified dict
+                    try:
+                        import ast
+                        r_dict = ast.literal_eval(reason_raw)
+                        if isinstance(r_dict, dict):
+                             reason = " ".join([str(v) for v in r_dict.values()])
+                        else:
+                             reason = reason_raw
+                    except:
+                        reason = reason_raw
+                else:
+                    reason = str(reason_raw)
+                
+                # Tie-breaker: No 5-5 allowed
+                if s_a == s_b:
+                    if random.choice([True, False]): s_a += 1
+                    else: s_b += 1
+                
                 return {
                     "judge": judge_model,
-                    "score_a": int(data.get("score_a", 5)),
-                    "score_b": int(data.get("score_b", 5)),
-                    "reason": str(data.get("reason", "No reason."))
+                    "score_a": s_a,
+                    "score_b": s_b,
+                    "reason": reason
                 }
             except (json.JSONDecodeError, ValueError, TypeError):
-                # Fallback Regex
+                # Fallback 1: AST Literal Eval (for Python dicts)
+                try:
+                    # Finds the largest {...} block
+                    dict_match = re.search(r"(\{.*\})", content, re.DOTALL)
+                    if dict_match:
+                        data = ast.literal_eval(dict_match.group(1))
+                        s_a = int(data.get("score_a", 5))
+                        s_b = int(data.get("score_b", 5))
+                        
+                        raw_reason = data.get("reason", "No reason.")
+                        if isinstance(raw_reason, dict):
+                            reason = " ".join([str(v) for v in raw_reason.values()])
+                        else:
+                            reason = str(raw_reason)
+                            
+                        # Tie-breaker
+                        if s_a == s_b:
+                            if random.choice([True, False]): s_a += 1
+                            else: s_b += 1
+                            
+                        return {"judge": judge_model, "score_a": s_a, "score_b": s_b, "reason": reason}
+                except:
+                    pass
+
+                # Fallback 2: Regex
                 s_a = re.search(r"score_a.*?(\d+)", content, re.IGNORECASE)
                 s_b = re.search(r"score_b.*?(\d+)", content, re.IGNORECASE)
-                reason = re.search(r'reason.*?["\':](.*?)["}]', content, re.IGNORECASE | re.DOTALL)
+                
+                # Try to catch reason text, avoiding nested brackets if possible
+                reason = re.search(r'reason.*?["\':]\s*"?([^"{}]+)"?', content, re.IGNORECASE | re.DOTALL)
                 
                 val_a = int(s_a.group(1)) if s_a else 5
                 val_b = int(s_b.group(1)) if s_b else 5
+                
+                if val_a == val_b:
+                    if random.choice([True, False]): val_a += 1
+                    else: val_b += 1
                 
                 return {
                     "judge": judge_model,
                     "score_a": val_a,
                     "score_b": val_b,
-                    "reason": reason.group(1).strip() if (reason and reason.group(1)) else "Parse error."
+                    "reason": reason.group(1).strip() if (reason and reason.group(1)) else "Parse error (complex output)."
                 }
         except Exception as e:
             if attempt == retries:
