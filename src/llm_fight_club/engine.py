@@ -26,6 +26,25 @@ class JudgeRotation:
     
     def get_judges(self, fighters):
         judges = []
+        
+        # Categorize pool
+        providers = {}
+        for m in self.pool:
+            p = m.split('/')[0]
+            if p not in providers: providers[p] = []
+            providers[p].append(m)
+            
+        # Try to pick 1 from each provider first (Diversity)
+        active_providers = list(providers.keys())
+        random.shuffle(active_providers)
+        
+        for p in active_providers:
+            if len(judges) >= 3: break
+            candidates = [m for m in providers[p] if m not in fighters and m not in judges]
+            if candidates:
+                judges.append(random.choice(candidates))
+        
+        # Fill the rest randomly
         attempts = 0
         while len(judges) < 3 and attempts < len(self.pool) * 2:
             judge = self.pool[self.rotation_index % len(self.pool)]
@@ -33,10 +52,6 @@ class JudgeRotation:
                 judges.append(judge)
             self.rotation_index += 1
             attempts += 1
-        
-        if len(judges) < 3:
-            remaining = [m for m in self.pool if m not in fighters and m not in judges]
-            judges.extend(random.sample(remaining, min(3 - len(judges), len(remaining))))
             
         return judges
 
@@ -59,9 +74,23 @@ def load_models():
             all_models.extend(pool[provider])
         
         all_models = list(set(all_models))
+        # Filter for top models
         keywords = ["kimi", "qwen", "glm", "minimax", "llama", "gemma", "mistral"]
-        filtered_models = [m for m in all_models if any(k in m.lower() for k in keywords)]
-        return filtered_models if filtered_models else all_models
+        filtered_models = [
+            m for m in all_models 
+            if any(k in m.lower() for k in keywords)
+        ]
+        
+        final_models = filtered_models if filtered_models else all_models
+        
+        # Debug Distribution
+        dist = {}
+        for m in final_models:
+            p = m.split('/')[0]
+            dist[p] = dist.get(p, 0) + 1
+        console.print(f"[dim]Model Pool: {dist}[/dim]")
+        
+        return final_models
     except Exception as e:
         console.print(f"[bold red]Error loading models_pool.json:[/bold red] {e}")
         return []
@@ -117,7 +146,7 @@ def get_single_judge_verdict(judge_model, topic, text_a, text_b):
             model=judge_model,
             messages=[{"role": "user", "content": judge_prompt}],
             max_tokens=500,
-            timeout=120,
+            timeout=180,
             response_format={"type": "json_object"} if any(p in judge_model for p in ["groq", "mistral", "openai"]) else None
         )
         content = response.choices[0].message.content
