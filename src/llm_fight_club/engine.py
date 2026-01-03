@@ -128,7 +128,7 @@ def generate_random_topic(fallback_model):
         except Exception:
             return "Should AI be granted legal personhood?"
 
-def get_single_judge_verdict(judge_model, topic, text_a, text_b):
+def get_single_judge_verdict(judge_model, topic, text_a, text_b, retries=2):
     judge_prompt = f"""
     Topic: {topic}
     Fighter A: {text_a}
@@ -141,25 +141,42 @@ def get_single_judge_verdict(judge_model, topic, text_a, text_b):
         "reason": "<detailed 1-2 sentence explanation>"
     }}
     """
-    try:
-        response = completion(
-            model=judge_model,
-            messages=[{"role": "user", "content": judge_prompt}],
-            max_tokens=500,
-            timeout=180,
-            response_format={"type": "json_object"} if any(p in judge_model for p in ["groq", "mistral", "openai"]) else None
-        )
-        content = response.choices[0].message.content
+    for attempt in range(retries + 1):
         try:
-            data = json.loads(content)
-            return {"judge": judge_model, "score_a": int(data.get("score_a", 5)), "score_b": int(data.get("score_b", 5)), "reason": str(data.get("reason", "No reason."))}
-        except json.JSONDecodeError:
-            s_a = re.search(r"score_a.*?(\d+)", content, re.IGNORECASE)
-            s_b = re.search(r"score_b.*?(\d+)", content, re.IGNORECASE)
-            reason = re.search(r'reason.*?["\':](.*?)["}]', content, re.IGNORECASE | re.DOTALL)
-            return {"judge": judge_model, "score_a": int(s_a.group(1)) if s_a else 5, "score_b": int(s_b.group(1)) if s_b else 5, "reason": reason.group(1).strip() if reason else "Parse error."}
-    except Exception as e:
-        return {"judge": judge_model, "score_a": 5, "score_b": 5, "reason": f"Timeout/Error: {str(e)[:50]}"}
+            response = completion(
+                model=judge_model,
+                messages=[{"role": "user", "content": judge_prompt}],
+                max_tokens=500,
+                timeout=180,
+                response_format={"type": "json_object"} if any(p in judge_model for p in ["groq", "mistral", "openai"]) else None
+            )
+            content = response.choices[0].message.content
+            try:
+                data = json.loads(content)
+                return {
+                    "judge": judge_model,
+                    "score_a": int(data.get("score_a", 5)),
+                    "score_b": int(data.get("score_b", 5)),
+                    "reason": str(data.get("reason", "No reason."))
+                }
+            except (json.JSONDecodeError, ValueError, TypeError):
+                # Fallback Regex
+                s_a = re.search(r"score_a.*?(\d+)", content, re.IGNORECASE)
+                s_b = re.search(r"score_b.*?(\d+)", content, re.IGNORECASE)
+                reason = re.search(r'reason.*?["\':](.*?)["}]', content, re.IGNORECASE | re.DOTALL)
+                val_a = int(s_a.group(1)) if s_a else 5
+                val_b = int(s_b.group(1)) if s_b else 5
+                return {
+                    "judge": judge_model,
+                    "score_a": val_a,
+                    "score_b": val_b,
+                    "reason": reason.group(1).strip() if (reason and reason.group(1)) else "Parse error."
+                }
+        except Exception as e:
+            if attempt == retries:
+                return {"judge": judge_model, "score_a": 5, "score_b": 5, "reason": f"Error: {str(e)[:50]}"}
+            time.sleep(2)
+    return {"judge": judge_model, "score_a": 5, "score_b": 5, "reason": "Timeout/Error"}
 
 def get_fighter_response(model, system_prompt, prompt, retries=1):
     for attempt in range(retries + 1):
@@ -198,12 +215,7 @@ def run_fight_loop():
                 topic = clean_text(generate_random_topic(fighter_a))
 
             fight_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-            console.print(Panel.fit(
-                f"[bold cyan]TOPIC:[/bold cyan] {topic}\n\n"
-                f"[red]🔴 {fighter_a}[/red] vs [blue]🔵 {fighter_b}[/blue]\n"
-                f"[yellow]👨‍⚖️ JUDGES:[/yellow]\n1. {judges[0]}\n2. {judges[1]}\n3. {judges[2]}",
-                title=f"🥊 FIGHT #{fight_id}", border_style="bold magenta"
-            ))
+            console.print(Panel.fit(f"[bold cyan]TOPIC:[/bold cyan] {topic}\n\n[red]🔴 {fighter_a}[/red] vs [blue]🔵 {fighter_b}[/blue]\n[yellow] JUDGES:[/yellow]\n1. {judges[0]}\n2. {judges[1]}\n3. {judges[2]}", title=f" FIGHT #{fight_id}", border_style="bold magenta"))
 
             fight_data = {"fight_id": fight_id, "timestamp": str(datetime.now()), "topic": topic, "red_model": fighter_a, "blue_model": fighter_b, "judges": judges, "rounds": [], "aggregate_scores": {"red": 0, "blue": 0}, "winner": None, "decision_type": None}
             history, total_red_score, total_blue_score = [], 0, 0
@@ -229,7 +241,7 @@ def run_fight_loop():
                 countdown(30, "Judges Deliberating")
                 
                 round_verdicts, red_round_wins, blue_round_wins = [], 0, 0
-                console.print("[bold yellow]👨‍⚖️ VERDICTS:[/bold yellow]")
+                console.print("[bold yellow] VERDICTS:[/bold yellow]")
                 for idx, j in enumerate(judges):
                     with console.status(f"[yellow]Judge {idx+1} judging...[/yellow]"): v = get_single_judge_verdict(j, topic, t_a, t_b)
                     if v['score_a'] > v['score_b']: red_round_wins += 1
@@ -244,9 +256,9 @@ def run_fight_loop():
                     console.print(f"[dim]{j.split('/')[-1]}[/dim]: A:[{s_a_col}]{v['score_a']}[/{s_a_col}] B:[{s_b_col}]{v['score_b']}[/{s_b_col}] - {v['reason']}")
                     round_verdicts.append(v)
 
-                if red_round_wins > blue_round_wins: console.print(f"\n[bold red]🥊 ROUND {round_num} WINNER: RED ({red_round_wins}-{blue_round_wins})[/bold red]")
-                elif blue_round_wins > red_round_wins: console.print(f"\n[bold blue]🥊 ROUND {round_num} WINNER: BLUE ({blue_round_wins}-{red_round_wins})[/bold blue]")
-                else: console.print(f"\n[bold yellow]🥊 ROUND {round_num} RESULT: DRAW[/bold yellow]")
+                if red_round_wins > blue_round_wins: console.print(f"\n[bold red] ROUND {round_num} WINNER: RED ({red_round_wins}-{blue_round_wins})[/bold red]")
+                elif blue_round_wins > red_round_wins: console.print(f"\n[bold blue] ROUND {round_num} WINNER: BLUE ({blue_round_wins}-{red_round_wins})[/bold blue]")
+                else: console.print(f"\n[bold yellow] ROUND {round_num} RESULT: DRAW[/bold yellow]")
 
                 fight_data["rounds"].append({"round": round_num, "red_text": t_a, "blue_text": t_b, "verdicts": round_verdicts})
                 if round_num < 5: countdown(120, "Intermission - Round Recovery")
@@ -261,10 +273,9 @@ def run_fight_loop():
                 elif b_sum > r_sum: judge_winners.append("blue")
                 else: judge_winners.append("draw")
 
-            # Sudden Death check if judge wins are equal (e.g. 1-1-1 or 0-0-3 etc)
             red_wins, blue_wins = judge_winners.count("red"), judge_winners.count("blue")
             if red_wins == blue_wins:
-                console.print(Rule("☠️ SUDDEN DEATH ☠️", style="bold red"))
+                console.print(Rule("SUDDEN DEATH", style="bold red"))
                 sd_prompt = "SUDDEN DEATH: Why do you deserve to win this fight? Be ruthless."
                 with console.status(f"[red]{fighter_a} SUDDEN DEATH...[/red]"): t_a = get_fighter_response(fighter_a, sys_prompt, sd_prompt)
                 console.print(Panel(Markdown(t_a), title=f"🔴 {fighter_a} (SD)", border_style="red"))
@@ -278,8 +289,9 @@ def run_fight_loop():
                         if v['score_a'] == v['score_b']: v['score_a'] += 1
                         sd_red += 1
                         winner_col = "red"
-                    else: sd_blue += 1
-                    winner_col = "blue"
+                    else: 
+                        sd_blue += 1
+                        winner_col = "blue"
                     console.print(f"Judge {idx+1} SD Vote: [{winner_col}]{winner_col.upper()}[/{winner_col}]")
                 winner = "red" if sd_red > sd_blue else "blue"
                 decision_type = "Sudden Death Victory"
@@ -291,12 +303,12 @@ def run_fight_loop():
             winner_name = fighter_a if winner == "red" else fighter_b
             winner_col = "bold red" if winner == "red" else "bold blue"
             console.print(Rule("FIGHT RESULTS", style="bold magenta"))
-            console.print(Panel(f"[bold]Winner:[/bold] [{winner_col}]{winner_name}[/{winner_col}]\n[bold]Decision:[/bold] {decision_type}\n[bold]Total Points:[/bold] Red: {total_red_score} | Blue: {total_blue_score}", title="🏆 VERDICT", border_style="magenta"))
+            console.print(Panel(f"[bold]Winner:[/bold] [{winner_col}]{winner_name}[/{winner_col}]\n[bold]Decision:[/bold] {decision_type}\n[bold]Total Points:[/bold] Red: {total_red_score} | Blue: {total_blue_score}", title=" VERDICT", border_style="magenta"))
             console.print("[dim]Judges:[/dim] " + ", ".join([j.split('/')[-1] for j in judges]))
             save_fight_result(fight_data)
             countdown(120, "Next fight starting")
     except KeyboardInterrupt:
-        console.print("\n[bold red]🛑 Shutdown.[/bold red]")
+        console.print("\n[bold red] Shutdown.[/bold red]")
         sys.exit(0)
 
 if __name__ == "__main__":
