@@ -197,14 +197,22 @@ def run_fight_loop():
                 console.print(Rule(f"ROUND {round_num}", style="dim yellow"))
                 
                 # Fighter A
-                p_a = f"Topic: {topic}. Position: FOR. Open." if round_num == 1 else f"Opponent: '{history[-1]['content']}'. Rebut."
+                if round_num == 1:
+                    p_a = f"Topic: {topic}. Position: FOR. Give your strong opening statement. Do not refer to an opponent yet."
+                else:
+                    p_a = f"Opponent: '{history[-1]['content']}'. Rebut."
+                
                 with console.status(f"[red]{fighter_a} typing...[/red]"):
                     t_a = get_fighter_response(fighter_a, sys_prompt, p_a)
                 console.print(Panel(Markdown(t_a), title=f"🔴 {fighter_a}", border_style="red"))
                 history.append({"role": "user", "content": t_a})
 
                 # Fighter B
-                p_b = f"Topic: {topic}. Position: AGAINST. Open." if round_num == 1 else f"Opponent: '{t_a}'. Rebut."
+                if round_num == 1:
+                    p_b = f"Topic: {topic}. Position: AGAINST. Give your strong opening statement. Do not refer to an opponent yet."
+                else:
+                    p_b = f"Opponent: '{t_a}'. Rebut."
+                
                 with console.status(f"[blue]{fighter_b} typing...[/blue]"):
                     t_b = get_fighter_response(fighter_b, sys_prompt, p_b)
                 console.print(Panel(Markdown(t_b), title=f"🔵 {fighter_b}", border_style="blue"))
@@ -212,15 +220,46 @@ def run_fight_loop():
 
                 # Judging
                 console.print("[dim]Judges are deciding...[/dim]")
-                countdown(30, "Judges Deliberating") # 30s pause before showing results
+                countdown(30, "Judges Deliberating") 
 
+                round_verdicts = []
+                red_round_wins = 0
+                blue_round_wins = 0
+                
                 console.print("[bold yellow]👨‍⚖️ VERDICTS:[/bold yellow]")
-                for j in judges:
-                    with console.status(f"[yellow]{j} judging...[/yellow]"):
+                for idx, j in enumerate(judges):
+                    with console.status(f"[yellow]Judge {idx+1} judging...[/yellow]"):
                         v = get_single_judge_verdict(j, topic, t_a, t_b)
+                    
+                    if v['score_a'] > v['score_b']: red_round_wins += 1
+                    elif v['score_b'] > v['score_a']: blue_round_wins += 1
+                    
+                    total_red_score += v['score_a']
+                    total_blue_score += v['score_b']
+                    
+                    if v['score_a'] > v['score_b']: judge_round_wins[j]["red"] += 1
+                    elif v['score_b'] > v['score_a']: judge_round_wins[j]["blue"] += 1
+                    
                     s_a_col = "green" if v['score_a'] > v['score_b'] else "white"
                     s_b_col = "green" if v['score_b'] > v['score_a'] else "white"
-                    console.print(f"[dim]{v['judge'].split('/')[-1]}[/dim]: A:[{s_a_col}]{v['score_a']}[/{s_a_col}] B:[{s_b_col}]{v['score_b']}[/{s_b_col}] - {v['reason']}")
+                    
+                    console.print(f"[dim]Judge {idx+1}[/dim]: A:[{s_a_col}]{v['score_a']}[/{s_a_col}] B:[{s_b_col}]{v['score_b']}[/{s_b_col}] - {v['reason']}")
+                    round_verdicts.append(v)
+
+                # Declare Round Winner
+                if red_round_wins > blue_round_wins:
+                    console.print(f"\n[bold red]🥊 ROUND {round_num} WINNER: RED ({red_round_wins}-{blue_round_wins})[/bold red]")
+                elif blue_round_wins > red_round_wins:
+                    console.print(f"\n[bold blue]🥊 ROUND {round_num} WINNER: BLUE ({blue_round_wins}-{red_round_wins})[/bold blue]")
+                else:
+                    console.print(f"\n[bold yellow]🥊 ROUND {round_num} RESULT: DRAW[/bold yellow]")
+
+                fight_data["rounds"].append({
+                    "round": round_num,
+                    "red_text": t_a,
+                    "blue_text": t_b,
+                    "verdicts": round_verdicts
+                })
 
                 # 2-MINUTE RATE LIMIT BREAK
                 if round_num < 5:
