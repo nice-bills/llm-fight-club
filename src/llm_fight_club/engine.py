@@ -1,6 +1,7 @@
 import random
 import sys
 from datetime import datetime
+from litellm import completion
 from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
@@ -10,9 +11,42 @@ from llm_fight_club.core.judging import JudgeRotation
 from llm_fight_club.core.fight import FightManager
 from llm_fight_club.utils.text import clean_text
 from llm_fight_club.utils.ui import countdown
-from llm_fight_club.core.judging import get_single_judge_verdict # for topic gen fallback if needed
 
 console = Console()
+
+def generate_random_topic(fallback_model):
+    topic_model = "groq/llama-3.3-70b-versatile"
+    
+    categories = [
+        "Bioethics (e.g. CRISPR, Cloning)",
+        "Space Exploration (e.g. Mars Rights, Alien Contact)",
+        "Economics (e.g. UBI, Crypto, Corporate Sovereignty)",
+        "Transhumanism (e.g. Mind Uploading, Cybernetics)",
+        "Environmental Engineering (e.g. Geoengineering, De-extinction)",
+        "Digital Rights (e.g. Privacy vs Security, Internet Censorship)"
+    ]
+    selected_category = random.choice(categories)
+    
+    prompt = f"""
+    Generate ONE controversial debate topic specifically about: {selected_category}.
+    
+    Rules:
+    - It must be a specific, high-stakes ethical or societal dilemma.
+    - Format: Single question ending in '?'.
+    - DO NOT generate generic "AI takes over world" topics unless relevant to the category. 
+    
+    Example: 'Should corporations be allowed to own genetic patents on extinct species?'
+    """
+    try:
+        # Try dedicated topic generator first
+        resp = completion(model=topic_model, messages=[{"role": "user", "content": prompt}], max_tokens=60, timeout=15)
+        return clean_text(resp.choices[0].message.content).replace('"', '')
+    except Exception:
+        try:
+            resp = completion(model=fallback_model, messages=[{"role": "user", "content": prompt}], max_tokens=60, timeout=15)
+            return clean_text(resp.choices[0].message.content).replace('"', '')
+        except Exception:
+            return "Should AI be granted legal personhood?"
 
 def run_fight_loop():
     try:
@@ -34,21 +68,8 @@ def run_fight_loop():
             judges = judge_rotator.get_judges([fighter_a, fighter_b])
 
             # 2. Topic
-            from litellm import completion
-            def generate_topic(fallback_model):
-                try:
-                    resp = completion(
-                        model="groq/llama-3.3-70b-versatile", 
-                        messages=[{"role": "user", "content": "Generate ONE controversial debate topic (technical/ethical/societal). Single question format."}],
-                        max_tokens=60, 
-                        timeout=15
-                    )
-                    return clean_text(resp.choices[0].message.content).replace('"', '')
-                except:
-                    return "Should AI be granted legal personhood?"
-
             with console.status("[yellow]Generating topic...[/yellow]"):
-                topic = generate_topic(fighter_a)
+                topic = generate_random_topic(fighter_a)
 
             # 3. Initialize Fight
             sys_prompt = "You are a ruthless debater. Attack logic. No apologies. Max 3 sentences."
