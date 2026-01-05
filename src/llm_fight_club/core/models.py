@@ -18,8 +18,8 @@ def load_models():
         
         all_models = []
         for provider in pool:
-            # ONLY Groq and Mistral for maximum stability/quality
-            if provider not in ["groq", "mistral"]:
+            # ONLY Stable providers
+            if provider not in ["groq", "mistral", "minimax"]:
                 continue
             all_models.extend(pool[provider])
         

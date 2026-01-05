@@ -1,9 +1,10 @@
 import os
 import json
 import random
+import asyncio
 import time
 from datetime import datetime
-from litellm import completion
+from litellm import acompletion
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
@@ -40,21 +41,32 @@ class FightManager:
         self.total_blue_score = 0
         self.judge_round_wins = {j: {"red": 0, "blue": 0} for j in self.judges}
 
-    def get_fighter_response(self, model, prompt, retries=1):
+    async def get_fighter_response(self, model, prompt, retries=1):
         """Internal helper for fighter calls."""
+        
+        # Prepare params
+        kwargs = {
+            "messages": [{"role": "system", "content": self.sys_prompt}, {"role": "user", "content": prompt}],
+            "max_tokens": 400,
+            "timeout": 45
+        }
+        
+        if "minimax" in model.lower():
+            kwargs["model"] = "openai/" + model.split("/")[-1]
+            kwargs["api_base"] = "https://api.minimax.io/v1"
+            kwargs["api_key"] = os.getenv("MINIMAX_API_KEY")
+            kwargs["temperature"] = 1.0
+        else:
+            kwargs["model"] = model
+
         for attempt in range(retries + 1):
             try:
-                resp = completion(
-                    model=model, 
-                    messages=[{"role": "system", "content": self.sys_prompt}, {"role": "user", "content": prompt}], 
-                    max_tokens=400, 
-                    timeout=45
-                )
+                resp = await acompletion(**kwargs)
                 text = clean_text(resp.choices[0].message.content)
                 if text and len(text) > 5: 
                     return text
             except Exception:
-                time.sleep(1)
+                await asyncio.sleep(1)
                 continue
         return "*[Fighter stood silent]*"
 
