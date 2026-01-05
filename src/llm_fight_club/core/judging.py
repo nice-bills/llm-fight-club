@@ -1,9 +1,11 @@
 import re
+import os
 import json
 import random
-import time
+import asyncio
 import ast
-from litellm import completion
+import time
+from litellm import acompletion
 from llm_fight_club.utils.text import clean_text
 
 class JudgeRotation:
@@ -46,7 +48,7 @@ class JudgeRotation:
             
         return judges
 
-def get_single_judge_verdict(judge_model, topic, text_a, text_b, retries=2):
+async def get_single_judge_verdict(judge_model, topic, text_a, text_b, retries=2):
     """Call a single judge and parse their verdict with retries and fallback."""
     judge_prompt = f"""
     Topic: {topic}
@@ -62,15 +64,26 @@ def get_single_judge_verdict(judge_model, topic, text_a, text_b, retries=2):
     }}
     """
     
+    # Prepare Minimax params if needed
+    kwargs = {
+        "messages": [{"role": "user", "content": judge_prompt}],
+        "max_tokens": 500,
+        "timeout": 180
+    }
+    
+    if "minimax" in judge_model.lower():
+        kwargs["model"] = "openai/" + judge_model.split("/")[-1]
+        kwargs["api_base"] = "https://api.minimax.io/v1"
+        kwargs["api_key"] = os.getenv("MINIMAX_API_KEY")
+        kwargs["temperature"] = 1.0
+    else:
+        kwargs["model"] = judge_model
+        if any(p in judge_model for p in ["groq", "mistral", "openai"]):
+            kwargs["response_format"] = {"type": "json_object"}
+
     for attempt in range(retries + 1):
         try:
-            response = completion(
-                model=judge_model,
-                messages=[{"role": "user", "content": judge_prompt}],
-                max_tokens=500,
-                timeout=180,
-                response_format={"type": "json_object"} if any(p in judge_model for p in ["groq", "mistral", "openai"]) else None
-            )
+            response = await acompletion(**kwargs)
             content = response.choices[0].message.content
             
             try:
