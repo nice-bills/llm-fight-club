@@ -3,7 +3,9 @@ import asyncio
 import random
 import time
 import litellm
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import os
+import glob
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from llm_fight_club.core.fight import FightManager
 
 # Suppress logs
@@ -35,6 +37,43 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+@app.get("/fights")
+async def list_fights():
+    """List all completed fights."""
+    results_dir = "results"
+    if not os.path.exists(results_dir):
+        return []
+    
+    files = glob.glob(os.path.join(results_dir, "fight_*.json"))
+    files.sort(key=os.path.getmtime, reverse=True) # Newest first
+    
+    summaries = []
+    for fpath in files:
+        try:
+            with open(fpath, "r") as f:
+                data = json.load(f)
+                summaries.append({
+                    "fight_id": data.get("fight_id"),
+                    "timestamp": data.get("timestamp"),
+                    "topic": data.get("topic"),
+                    "winner": data.get("winner"),
+                    "red": data.get("red_model"),
+                    "blue": data.get("blue_model")
+                })
+        except: continue
+        
+    return summaries
+
+@app.get("/fights/{fight_id}")
+async def get_fight(fight_id: str):
+    """Get full details of a specific fight."""
+    fpath = os.path.join("results", f"fight_{fight_id}.json")
+    if not os.path.exists(fpath):
+        raise HTTPException(status_code=404, detail="Fight not found")
+    
+    with open(fpath, "r") as f:
+        return json.load(f)
 
 @app.websocket("/ws/live")
 async def websocket_endpoint(websocket: WebSocket):
