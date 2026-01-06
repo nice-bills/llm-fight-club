@@ -1,8 +1,16 @@
 import json
 import asyncio
 import random
+import time
+import litellm
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from llm_fight_club.core.fight import FightManager
+
+# Suppress logs
+litellm.set_verbose = False
+litellm.suppress_debug_info = True
+
+app = FastAPI(title="AI Fight Club API")
 from llm_fight_club.core.models import load_models, get_model_lab
 from llm_fight_club.core.judging import JudgeRotation
 from litellm import acompletion 
@@ -80,7 +88,12 @@ async def websocket_endpoint(websocket: WebSocket):
             await manager.score_round(round_num, t_a, t_b)
             
             if round_num < 5:
-                await on_fight_event("intermission", {"duration": 120})
+                # Send target time, let client handle ticking
+                target_time = time.time() + 120
+                await on_fight_event("intermission", {
+                    "duration": 120,
+                    "starts_at": target_time
+                })
                 await asyncio.sleep(120) 
 
         # 7. Finalize

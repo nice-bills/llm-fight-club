@@ -164,7 +164,7 @@ async def get_single_judge_verdict(judge_model, topic, text_a, text_b, retries=2
                     "judge": judge_model,
                     "score_a": val_a,
                     "score_b": val_b,
-                    "reason": reason.group(1).strip() if (reason and reason.group(1)) else "Parse error (complex output)."
+                    "reason": reason.group(1).strip() if (reason and reason.group(1)) else content[:150].replace("\n", " ")
                 }
         except Exception as e:
             if attempt == retries:

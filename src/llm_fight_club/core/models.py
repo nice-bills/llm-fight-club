@@ -19,7 +19,7 @@ def load_models():
         all_models = []
         for provider in pool:
             # ONLY Stable providers
-            if provider not in ["groq", "mistral", "minimax"]:
+            if provider not in ["groq", "mistral"]:
                 continue
             all_models.extend(pool[provider])
         
@@ -27,7 +27,7 @@ def load_models():
         all_models = list(set(all_models))
             
         # Filter for top models
-        keywords = ["kimi", "qwen", "glm", "minimax", "llama", "gemma", "mistral"]
+        keywords = ["kimi", "qwen", "glm", "llama", "gemma", "mistral"]
         filtered_models = [
             m for m in all_models 
             if any(k in m.lower() for k in keywords)
